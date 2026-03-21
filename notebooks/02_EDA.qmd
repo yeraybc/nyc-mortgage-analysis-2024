@@ -21,4 +21,103 @@ execute:
   message: false
 ---
 
-## 
+# 1. Configuración librerias y carga de datos
+
+```{r}
+library(tidyverse)
+library(skimr)
+library(corrplot) # Para la matriz de correlación
+library(patchwork)
+library(ggplot2)
+library(purrr)
+
+# Cargamos el archivo Script_01
+datos_eda <- readRDS("../data/processed/hmda_ny_limpio.rds")
+```
+
+# 2. Análisis Univariante: Distribuciones {.tabset}
+
+## Finanzas Personales
+
+```{r}
+#| label: univariante-finanzas
+#| fig-width: 10
+#| fig-height: 8
+
+plot_distribucion <- function(data, variable) {
+  p1 <- ggplot(data, aes(x = .data[[variable]])) +
+    geom_histogram(fill = 'steelblue', color = 'white', bins = 40, alpha = 0.8) +
+    scale_x_continuous(labels = scales::comma) + 
+    labs(title = paste('Histograma:', variable), x = "", y = 'Frec.') +
+    theme_minimal()
+  
+  p2 <- ggplot(data, aes(x = .data[[variable]])) +
+    geom_boxplot(fill = "lightgreen", outlier.colour = 'red', outlier.alpha = 0.3) +
+    scale_x_continuous(labels = scales::comma) +
+    labs(title = paste('Boxplot:', variable), x = variable) +
+    theme_minimal() +
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+  
+  return(p1 / p2)
+}
+
+vars_finanzas_personales <- c("income", "loan_amount", "property_value")
+map(vars_finanzas_personales, ~plot_distribucion(datos_eda, .x))
+```
+
+## Ratios de Riesgo
+
+```{r}
+#| label: univariante-ratios
+#| fig-width: 10
+#| fig-height: 4
+
+plot_distribucion(datos_eda, "loan_to_value_ratio")
+```
+
+## Datos de Censos
+
+```{r}
+#| label: univariante-censo
+#| fig-width: 10
+#| fig-height: 12
+
+vars_censo <- c("tract_population", 
+                "tract_minority_population_percent", 
+                "ffiec_msa_md_median_family_income", 
+                "tract_to_msa_income_percentage", 
+                "tract_owner_occupied_units", 
+                "tract_one_to_four_family_homes", 
+                "tract_median_age_of_housing_units")
+
+map(vars_censo, ~plot_distribucion(datos_eda, .x))
+```
+
+# 3. Análisis Bivariante
+
+```{r}
+#| label: matriz-correlacion
+#| fig-cap: "Matriz de Correlación (Pearson) de Variables Numéricas"
+#| fig-width: 9
+#| fig-height: 9
+
+# Filtramos solo las variables numéricas
+datos_num <- datos_eda %>%
+  select(where(is.numeric)) 
+
+# Calculamos la matriz de correlación
+matriz_corr <- cor(datos_num, use = "pairwise.complete.obs")
+
+# Visualizamos 
+corrplot::corrplot(matriz_corr, 
+                   method = "color",       # Usamos como metodo paleta un gradiente de color
+                   type = "upper",         # Muestra solo el triángulo superior 
+                   addCoef.col = "black",  # Muestra los coeficientes en negro
+                   number.cex = 0.7,       # Tamaño de la fuente de los números
+                   tl.col = "black",       # Coloreamo las etiquetas de las variables
+                   tl.srt = 45,            # Rotamos las etiquetas 45 grados 
+                   col = colorRampPalette(c("#D73027", "#FFFFFF", "#4575B4"))(200), # Aplicamos una paleta divergente
+                   diag = FALSE,           # No mostramos la diagonal (es 1)
+                   title = "Mapa de Calor",
+                   mar = c(0,0,2,0))       # Margen para que el título no se corte
+```
