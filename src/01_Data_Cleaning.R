@@ -64,48 +64,64 @@ datos_final <- raw_data %>%
     -starts_with("aus"),           # Sistemas de scoring internos
     -contains("observed"),         # Método de recolección (evitamos ruido operativo)
     -matches("ethnicity_[1-5]"),   # Usaremos las versiones 'derived'
-    -matches("race_[1-5]")         # Usaremos las versiones 'derived'
+    -matches("race_[1-5]"),         # Usaremos las versiones 'derived'
+    -multifamily_affordable_units #Eliminada por 99% de NAs
   ) %>%
   
   # Solo tendremos en cuenta decisiones finales (1 = Aprobado, 3 = Denegado)
   filter(action_taken %in% c("1", "3")) %>%
-  mutate(target = if_else(action_taken == "1", 1, 0)) %>%
+  mutate(target = factor(if_else(action_taken == "1", "1", "0"), 
+                         levels = c("0", "1"))) %>%
+  select(-action_taken) %>%   # Eliminamos la variable original para que el modelo no haga trampa si la mantenemos
   
-  # Limpieza de Numéricos (Manejo de "Exempt" y "NA") ---
+  # Modificación valores exentos, texto libre, valores erroneos
   mutate(across(
-    c(loan_to_value_ratio, property_value, multifamily_affordable_units, income, loan_amount),
-    ~ as.numeric(str_replace_all(str_trim(.x), "^(NA|Exempt|)$", NA_character_))
+    where(is.character),
+    ~ {
+      # Limpiamos los espacios ocultos de toda la columna
+      valor_limpio <- str_trim(.x)
+      # Aplicamos el filtro de seguridad de palabras no admitidas
+      case_when(
+        valor_limpio %in% c("1111", "Exempt", "U", "Free Form Text Only", "NA", "8888", "9999") ~ NA_character_,
+        TRUE ~ valor_limpio
+      )
+    }
   )) %>%
-  # Limpieza de códigos 8888/9999 en la variable Edad
+
+  # Conversion a numéricas y winsorización
+  mutate(across(
+    c(loan_to_value_ratio, property_value, income, loan_amount, 
+      starts_with("tract_"), ffiec_msa_md_median_family_income),
+    as.numeric
+  )) %>%
+  
+  mutate(
+    income = if_else(income <= 0, NA_real_, income),
+    
+    income              = pmin(income, quantile(income, 0.99, na.rm = TRUE)),
+    loan_to_value_ratio = pmin(loan_to_value_ratio, quantile(loan_to_value_ratio, 0.99, na.rm = TRUE)),
+    loan_amount         = pmin(loan_amount, quantile(loan_amount, 0.99, na.rm = TRUE)),
+    property_value      = pmin(property_value, quantile(property_value, 0.99, na.rm = TRUE))
+  ) %>%
+  
+  # Conversión factores ordinales
   mutate(across(
     c(applicant_age, co_applicant_age),
-    ~ factor(
-      if_else(.x %in% c('8888', '9999', 'NA'), NA_character_, .x),
-      levels = niveles_edad, 
-      ordered = TRUE
-    )
+    ~ factor(.x, levels = niveles_edad, ordered = TRUE)
   )) %>%
   
-  # DTI pasamos a Factor Ordinal
   mutate(debt_to_income_ratio = factor(
-    if_else(debt_to_income_ratio %in% c('NA', 'Exempt'), NA_character_, debt_to_income_ratio),
-    levels = niveles_dti, ordered = TRUE
+    if_else(is.na(debt_to_income_ratio), 
+            "No_Reportado", 
+            debt_to_income_ratio),
+    
+    levels = c(niveles_dti, "No_Reportado"), ordered = TRUE
   )) %>%
   
-  # Unidades pasamos a Factor Ordinal
   mutate(total_units = factor(total_units, levels = niveles_unidades, ordered = TRUE)) %>%
   
-  # Convertimos los Factores Nominales (Categorías)
-  mutate(across(
-    any_of(c(
-      "occupancy_type", "derived_loan_product_type", 
-      "derived_ethnicity", "derived_race", "derived_sex", 
-      "conforming_loan_limit", "applicant_credit_score_type", 
-      "co_applicant_credit_score_type", "submission_of_application", 
-      "initially_payable_to_institution"
-    )),
-    as.factor
-  ))
+  # Conversión dinámica al resto de categóricas. De esta froma nos aseguramos que el codigo es estable a largo plazo, pero tiene consecuencias
+  mutate(across(where(is.character), as.factor))
 
 
 # 5.GUARDADO DE ESTA VERSION FINAL
