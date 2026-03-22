@@ -263,8 +263,8 @@ El análisis de las variables demográficas y de solvencia revela patrones estru
     * **Acción:** Para mejorar matemáticamente la Regresión Logística que aplicare al tratar de una variable objetivo binaria, simplificare la dimensionalidad de la edad fusionando estos extremos poco representativos con sus grupos adyacentes (ej. agrupare '<25' dentro de la categoría '25-34', al igual que '>75' con '65-74').
 
 3.  **Métricas de Solvencia (DTI y Scoring):**
-    * El ratio de endeudamiento (`debt_to_income_ratio`) presenta una distribución muy sana y balanceada en bloques, sin alertas de clases raras. Es notable que un 20.0% no reporta este dato.
-    * Por el contrario, el modelo de puntuación crediticia (`applicant_credit_score_type`) tiene una larga 'cola' de modelos residuales (códigos 7, 8, 14, 15...) que apenas representan unas décimas porcentuales.
+    * El ratio de endeudamiento (`debt_to_income_ratio`) revela un vacío de información crítico: un 47.7% de los registros no presentan este dato. Esto indica que casi la mitad de la cartera requiere una estrategia de imputación por categoría ('Desconocido') para no perder la capacidad predictiva de la variable.
+    * Por el contrario, el modelo de puntuación crediticia (`applicant_credit_score_type`) confirma la sospecha de fragmentación. Los modelos residuales (7, 8, 14, 15...) serán agrupados en 'Otros Modelos' para garantizar que el algoritmo no alucine patrones en grupos con n < 1%.
     * **Acción:** Aplicare una limpieza similar a decisiones previas: mantendre intactos los 4 modelos de *Scoring* principales (que concentran cerca del 95% del volumen de la variable) y agrupare toda la 'cola roja' en una nueva categoría llamada ('Otros Modelos'), de forma que de un mayor volumen en la variable a estas categorias independientes minoritarias.
 
 ## Condiciones Préstamo
@@ -292,12 +292,12 @@ El análisis visual de las características del préstamo revela un mercado hipo
     * **Acción:** Para evitar que el algoritmo se pierda intentando buscar patrones en nichos minúsculos, en la Fase 3 creare una nueva variable binaria o agrupada mediante **Binning** como he hecho anteriormente(ej. 'Convencional' vs. 'Gubernamental/Otros').
 
 2.  **Alta Fragmentación Temporal:**
-    * Las variables relacionadas con plazos temporales (`prepayment_penalty_term` y `intro_rate_period`) están extremadamente fragmentadas. Aunque hay duraciones comunes (como 36 meses), existe una 'larga cola' de decenas de plazos minoritarios (1, 2, 84 meses...).
-    * **Acción y Justificación:** Introducir una variable categórica con 20 o 30 niveles con tan pocos datos destrozaría un modelo de árboles de decisión (demasiadas ramas sin peso estadístico) o un modelo de Regresión Logística, por lo que la estrategia será simplificar estas variables agrupándolas en bloques lógicos (ej. 'Sin penalización', '< 3 años', '> 3 años') o convirtiéndolas en variables indicadoras binarias ('Tiene periodo intro' vs. 'No tiene'), son algunos ejemplos a realizar, mas adelante decidire cual desempeñare.
+    * Las variables relacionadas con plazos temporales (`prepayment_penalty_term` y `intro_rate_period`) están extremadamente fragmentadas. Aunque hay duraciones comunes (como 36 meses), existe una 'larga cola' de decenas de plazos minoritarios (1, 2, 84 meses...). En concreto, `prepayment_penalty_term` presenta un 99.4% de nulos, lo que la inhabilita para cualquier proceso de Binning.
+    * **Acción y Justificación:** IEstas variables no se agruparán; se descartarán por falta de representatividad estadística. En el caso de intro_rate_period (87% NAs), evaluaremos si el dato faltante es en sí mismo un indicador de 'Tasa Fija'.
 
 3.  **El Fenómeno a evitar: 'Near-Zero Variance' (Características Tóxicas)**
-    * Los gráficos de características no amortizables (`negative_amortization`, `balloon_payment`, `interest_only_payment`, `other_nonamortizing_features`) son lo más importante de esta sección. Esto se debe a que estas prácticas de alto riesgo, que eran común antes de 2008, hoy representan entre el **0.0% y el 6.0%**.
-    * **Acción:** Si mantengo una columna como `negative_amortization` donde el 100.0% de las filas dice 'No', el modelo que utilizo no aprendera nada. Es por ello que en la Fase 3, **eliminare por completo** aquellas variables con este comportamiento (las que superen el 98-99% de homogeneidad), ya que matemáticamente no aportan ningún poder predictivo para diferenciar a un buen pagador de uno malo.
+    * Variables como `negative_amortization` o `balloon_payment` muestran una homogeneidad superior al 97%. En términos de teoría de la información, su varianza es cercana a cero.
+    * **Acción:** Si mantenemos variables donde casi no hay casos positivos ('Sí') obliga al modelo a realizar suposiciones basadas en el ruido. La eliminación de estas 'variables' simplificara el modelo, reducira el tiempo de entrenamiento y mejorara la interpretabilidad sin sacrificar precisión ni sufriendo de *overfitting*.
 
 ## Propiedad y operación
 
@@ -326,7 +326,7 @@ El análisis de las características del inmueble y el origen de la operación n
 2.  **Uso de la Propiedad y Agrupación de Unidades:**
     * El 85.6% de las hipotecas son para 'Residencia Principal'. Las segundas residencias (3.0%) caen en zona de alerta roja.
     * La variable `total_units` tiene una larga cola de propiedades multifamiliares (2, 3, 4, 5-24 unidades...) que individualmente carecen de importancia.
-    * **Acción:** En la Fase 3, aplicare **Binning** para agrupar todas las propiedades de más de 1 unidad bajo una única etiqueta ('>1 Unidad'). De igual forma, fusionare 'Inversión' y 'Segunda Residencia' en una categoría conjunta de 'No Principal' si el algoritmo necesita más contraste, ya que le será difícil capturar categorías tan poco representativas.
+    * **Acción:** En la Fase 3, aplicare *Binning* para agrupar todas las propiedades de más de 1 unidad bajo una única etiqueta ('>1 Unidad'). Con respecto a `occupancy_type`, mantendré 'Inversión' (10.1%) separada de 'Residencia Principal' por su distinto perfil de riesgo. La categoría de 'Segunda Residencia' será monitoreada y agrupada solo si el análisis bivariante no muestra una diferencia significativa en la tasa de malo, para no enmascarar riesgos ocultos.
 
 3.  **Geografía Operativa (MSA) y Origen:**
     * El canal de entrada (`submission_of_application`) está muy sano y balanceado, con un sólido 21.7% de operaciones viniendo a través de Brokers/Terceros.
@@ -335,27 +335,30 @@ El análisis de las características del inmueble y el origen de la operación n
 
 ### Resumen para la Fase 3 (*Feature Engineering*)
 
-El análisis univariante de las distribuciones numéricas y categóricas indica las transformaciones/medidas que debemos aplicar a los datos antes de la fase de entrenamiento. Estas acciones buscan evitar el sobreajuste (*overfitting*), reducir la dimensionalidad y eliminar ruido:
+El diagnóstico detallado de las distribuciones numéricas y categóricas dicta las transformaciones estratégicas necesarias para garantizar la estabilidad de los algoritmos futuros. El objetivo es eliminar el ruido de variables casi constantes, reducir la dimensionalidad y gestionar de forma inteligente el alto volumen de datos no reportados:
 
-* 1. Eliminación Directa
-    * **Motivo:** Varianza casi nula o redundancia con otras variables.
-    * **Variables a eliminar:** * `negative_amortization`, `balloon_payment`, `interest_only_payment`, `other_nonamortizing_features`.
-        * `manufactured_home_secured_property_type`, `manufactured_home_land_property_interest`.
+#### 1. Eliminación Directa
+* **Motivo:** Varianza cuasi-nula (homogeneidad > 97%) o impide cualquier aprendizaje estadístico
+* **Variables a eliminar:**
+    * `negative_amortization`, `balloon_payment`, `interest_only_payment`, `other_nonamortizing_features`: Prácticas de riesgo residuales en el mercado actual de NY (volumen < 3%).
+    * `prepayment_penalty_term`: Inhabilitada por un **99.4%** de valores nulos.
+    * `manufactured_home_secured_property_type` y `manufactured_home_land_property_interest`: Redundantes; la información ya está capturada por el método de construcción.
 
-* 2. Agrupación de Categorías Minoritarias (*Binning*)
-    * **Motivo:** Falta de representatividad estadística (clases < 5%) que inestabilizaran el algoritmo.
-    * **Variables y Tratamiento:**
-        * **Razas y Etnias (`derived_race`, `derived_ethnicity`):** Mantener el 'Not Available' por su valor predictivo, pero agrupar minorías marginales en 'Otras Minorías'.
-        * **Edad (`applicant_age`, `co_applicant_age`):** Fusionar los extremos con baja densidad (`<25` y `>74`) con sus tramos adyacentes para consolidar el ciclo vital.
-        * **Geografía (`derived_msa_md`):** Conservar las 5 Áreas Metropolitanas principales y agrupar la 'larga cola' en 'Resto/Otros'.
-        * **Producto y Propiedad:** Agrupar `loan_type` en 'Convencional' vs 'Gubernamental'; `total_units` en '1 Unidad' vs 'Multifamiliar'; y `occupancy_type` en 'Principal' vs 'No Principal'.
-        * **Scoring Crediticio (`applicant_credit_score_type`):** Conservar los 4 modelos principales y encapsular la cola residual en 'Otros Modelos'.
+#### 2. Agrupación de Categorías Minoritarias (*Binning*)
+* **Motivo:** Consolidar masa crítica (n > 5%) para evitar que el algoritmo genere patrones erróneos o sufra de sobreajuste (*overfitting*).
+* **Variables y Tratamiento:**
+    * **Razas y Etnias (`derived_race`, `derived_ethnicity`):** Preservar 'Not Available' por su valor predictivo. Agrupar minorías marginales en 'Otras Minorías' y hogares multirraciales en 'Joint'.
+    * **Edad (`applicant_age`, `co_applicant_age`):** Fusión de los extremos poblacionales (`<25` y `>74`) con sus tramos contiguos para estabilizar el peso del ciclo vital.
+    * **Geografía (`derived_msa_md`):** Conservar las 5 Áreas Metropolitanas líderes en volumen y colapsar la 'larga cola' de zonas rurales o de baja actividad en 'Otros'.
+    * **Producto y Propiedad:** Agrupar `loan_type` en 'Convencional' vs 'Gubernamental'; `total_units` en '1 Unidad' vs '>1 Unidad'; y `occupancy_type` en 'Principal' vs 'Inversión' 'Segunda Residencia'.
+    * **Scoring Crediticio (`applicant_credit_score_type`):** Mantener los 4 modelos de puntuación dominantes y encapsular la cola residual en 'Otros Modelos'.
 
-* 3. Discretización de Continuas (*Binning*)
-    * **Motivo:** Evitar sobreajustes a valores numéricos extremos que no reflejan finformación relevante, sino geografía o plazos tiempo fragmentados.
-    * **Variables y Tratamiento:**
-        * **Censo Macroeconómico:** Transformar `tract_population`, `ffiec_msa_md_median_family_income` y `tract_median_age_of_housing_units` en rangos ordinales (ej. Cuartiles: Bajo, Medio, Alto) para capturar el riesgo espacial sin ruido continuo y que tengan un orden capturable.
-        * **Plazos Temporales (`prepayment_penalty_term`, `intro_rate_period`):** Convertir las decenas de plazos disponibles/dispersos en rangos lógicos ('< 3 años', '> 3 años') o variables indicadoras binarias ('Tiene' vs 'No tiene').
+#### 3. Tratamiento de Vacuidad Crítica e Ingeniería de Continuas
+* **Motivo:** Transformar el 'dato faltante' en una señal de negocio y normalizar rangos para mejorar la convergencia algorítmica.
+* **Variables y Tratamiento:**
+    * **Ratio de Endeudamiento (`debt_to_income_ratio`):** Ante el **47.7% de nulos**, se transformará de numérica a **categórica ordinal**, creando el nivel 'No Reportado' para capturar el riesgo implícito de la falta de dato.
+    * **Plazos Temporales (`intro_rate_period`):** Debido al **87.0% de nulos**, se simplificará a una variable **indicadora binaria** (*Dummy*): 'Tiene periodo introductorio' vs. 'No tiene/Tasa Fija'.
+    * **Censo Macroeconómico:** Discretización de `tract_population` e ingresos medianos en **Cuartiles** (Bajo, Medio, Alto) para capturar el riesgo geográfico sin el ruido de valores extremos.
 
 # 4. Análisis Bivariante
 
@@ -406,3 +409,179 @@ El mapa de calor de correlaciones de Pearson sirve para la selección de caracte
 4.  **Huella Socioeconómica:**
     * La variable de minorías (`tract_minority_population_percent`) tiene correlaciones negativas persistentes con la riqueza relativa del barrio (**-0.39** con el % de ingresos del MSA) y con la propiedad de vivienda (**-0.36** con unidades ocupadas por sus dueños). 
     * **Conclusión de Negocio:** Esto demuestra matemáticamente una brecha socioeconómica y de segregación residencial en los datos. El modelo corre un alto riesgo de aprender a penalizar códigos postales con alta densidad de minorías, al estar estas correlacionadas con menor riqueza. Esto subraya la importancia de realizar un análisis de Fairness final.
+    
+# 5. Análisis de Sesgo (Fairness) 
+
+En el sector bancario, debemos garantizar la equidad algorítmica y cumplir con regulaciones como la *Fair Housing Act*. Este análisis evalúa la presencia de *Disparate Impact* (Impacto Dispar) en los datos históricos cruzando la demografía con la variable de decisión final (`target`).
+
+```{r}
+#| label: fairness-audit
+#| fig-cap: 'Análisis de Equidad: Semáforo de Riesgo e Impacto Adverso (AIR)'
+#| fig-width: 12
+#| fig-height: 5
+
+library(patchwork)
+
+plot_fairness <- function(data, variable_demografica, titulo, target_var = 'target') {
+  
+  # Calculamos la media y umbral internamente para las líneas
+  media_global <- mean(as.numeric(as.character(data[[target_var]])), na.rm = TRUE)
+  umbral_legal_80 <- media_global * 0.80
+  
+  data %>%
+    mutate(!!variable_demografica := fct_explicit_na(factor(.data[[variable_demografica]]), na_level = 'Falta Dato')) %>%
+    group_by(.data[[variable_demografica]]) %>%
+    summarise(
+      Total = n(),
+      Tasa_Aprobacion = mean(as.numeric(as.character(.data[[target_var]])), na.rm = TRUE)
+    ) %>%
+    filter(Total > 100) %>% 
+    mutate(
+      Etiqueta_Eje = paste0(.data[[variable_demografica]], ' (n=', scales::comma(Total), ')'),
+      Nivel_Riesgo = case_when(
+        Tasa_Aprobacion >= media_global ~ '1. Óptimo (≥ Media)',
+        Tasa_Aprobacion >= umbral_legal_80 ~ '2. Precaución (Dentro de la legalidad)',
+        TRUE ~ '3. Riesgo Legal (Impacto Adverso < 80%)'
+      ),
+      Nivel_Riesgo = factor(Nivel_Riesgo, levels = c('1. Óptimo (≥ Media)', 
+                                                     '2. Precaución (Dentro de la legalidad)', 
+                                                     '3. Riesgo Legal (Impacto Adverso < 80%)'))
+    ) %>%
+    ggplot(aes(x = reorder(Etiqueta_Eje, Tasa_Aprobacion), y = Tasa_Aprobacion)) +
+    geom_col(aes(fill = Nivel_Riesgo), color = '#34495e', linewidth = 0.5, alpha = 0.9) +
+    geom_hline(yintercept = media_global, linetype = 'dashed', color = '#2c3e50', linewidth = 1) +
+    geom_hline(yintercept = umbral_legal_80, linetype = 'dotted', color = '#c0392b', linewidth = 1.2) +
+    geom_text(aes(label = scales::percent(Tasa_Aprobacion, accuracy = 0.1)), 
+              hjust = -0.1, size = 4, fontface = 'bold', color = '#2c3e50') +
+    coord_flip() +
+    scale_y_continuous(labels = scales::percent, expand = expansion(mult = c(0, 0.25))) + 
+    scale_fill_manual(values = c(
+      '1. Óptimo (≥ Media)' = '#2ecc71', 
+      '2. Precaución (Dentro de la legalidad)' = '#f1c40f', 
+      '3. Riesgo Legal (Impacto Adverso < 80%)' = '#e74c3c'
+    ), drop = FALSE) + 
+    # Dejamos solo el título del sub-gráfico
+    labs(title = titulo, x = '', y = 'Tasa de Aprobación', fill = 'Diagnóstico de Equidad:') +
+    theme_minimal() +
+    theme(plot.title = element_text(face = 'bold'),
+          panel.grid.major.y = element_blank())
+}
+
+# Generamos los sub-gráficos
+p_raza <- plot_fairness(datos_eda, 'derived_race', 'Por Raza')
+p_sexo <- plot_fairness(datos_eda, 'derived_sex', 'Por Sexo')
+
+# Calculamos los valores globales
+media_num <- mean(as.numeric(as.character(datos_eda$target)), na.rm = TRUE)
+sub_text <- paste0('Media Global del Banco: ', scales::percent(media_num, accuracy = 0.1), 
+                   '  |  Umbral Riesgo Legal (80%): ', scales::percent(media_num * 0.8, accuracy = 0.1))
+
+# Unificamos todo con Patchwork
+(p_raza | p_sexo) + 
+  plot_annotation(
+    title = 'Auditoría de Sesgo Algorítmico (Disparate Impact)',
+    subtitle = sub_text,
+    theme = theme(plot.title = element_text(size = 16, face = 'bold'),
+                  plot.subtitle = element_text(size = 12, color = '#c0392b', face = 'bold'))
+  ) +
+  plot_layout(guides = 'collect') & 
+  theme(legend.position = 'bottom')
+```
+
+### Conclusiones: Análisis de Sesgo (Fairness)
+
+La evaluación del Impacto Adverso (*Disparate Impact*) cruzando la demografía de los solicitantes con el historial de aprobaciones (`target`) arroja métricas vitales para el cumplimiento normativo antes de entrenar nuestros modelo:
+
+1.  **Cumplimiento del Umbral Legal (Ausencia de Alertas Rojas):**
+    * Lo más importante a nivel regulatorio es que **ningún grupo demográfico cae en la zona de 'Riesgo Legal' (Rojo)**. 
+    * La media global de aprobación del banco es excepcionalmente alta (**86.1%**). Aplicando la regla legal de los cuatro quintos (80% Rule) de la que se rigen en los bancos de EE.UU, el umbral de impacto adverso se sitúa en el **68.9%**.
+    * Incluso el grupo con menor tasa de aprobación (*American Indian or Alaska Native* con un 69.7%) logra superar por la mínima este umbral crítico, eximiendo así al histórico del banco de penalizaciones directas por discriminación
+
+2.  **Brechas Estructurales por Raza (Zona de Precaución):**
+    * Aunque cumplimos la ley, el gráfico revela una clara estratificación social. Las solicitudes conjuntas (`Joint`), los solicitantes blancos (`White`, 87.9%) y asiáticos (`Asian`, 86.5%) son los únicos grupos en la zona verde (óptima).
+    * Históricas minorías caen en la zona amarilla (Precaución), destacando a los solicitantes afroamericanos (`Black or African American`) con un **79.3%**. 
+    * **Nota Técnica:** Esta es una medida de equidad *marginal*. Es muy probable que esta brecha del 7-8% frente a los solicitantes blancos no se deba a un sesgo directo del banco, sino a desigualdades socioeconómicas sistémicas (menores ingresos, mayor LTV o peores *scorings* en estos grupos). Nuestros futuros modelo deberán analizarse para asegurar que no perpetúa ni amplifica esta brecha existente.
+
+3.  **Equidad de Género y el 'Efecto Co-Solicitante':**
+    * El análisis por sexo revela una equidad mucho más balanceada. Hombres (84.7%) y mujeres (83.7%) tienen tasas de aprobación casi idénticas, descartando sesgos de género significativos.
+    * **Patrón de Negocio:** El verdadero motor de aprobación no es el género, sino la estructura de la solicitud. Las solicitudes conjuntas (`Joint`) lideran ambos gráficos con un **~90%** de éxito. Financieramente tiene todo el sentido: dos titulares implican doble fuente de ingresos, menor ratio DTI y una mitigación drástica del riesgo de impago para el banco.
+
+# 6. Análisis Datos Faltantes (Missings)
+    
+```{r}
+#| label: analisis-missings
+#| fig-cap: 'Evaluación de Datos y Viabilidad de Imputación'
+#| fig-width: 10
+#| fig-height: 6
+
+# Calculamos el % de NAs por variable
+missings_df <- datos_eda %>%
+  summarise(across(everything(), ~ mean(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = 'variable', values_to = 'pct_na') %>%
+  filter(pct_na > 0) %>%
+  arrange(desc(pct_na))
+
+# Protegemos el renderizado visualmente
+if(nrow(missings_df) == 0) {
+  
+  # Renderizamos un gráfico de 'Check' en lugar de texto de consola
+  ggplot() +
+    annotate('text', x = 0.5, y = 0.5, 
+             label = '¡Dataset 100% Completo!\nNo hay valores nulos (NA) nativos pendientes de tratamiento.',
+             size = 6, color = '#27ae60', fontface = 'bold') +
+    theme_void() +
+    labs(title = 'Fotografía de Valores Nulos (Missing Data)')
+  
+} else {
+  
+  # Visualización del patrón de nulos con umbrales de acción
+  missings_df %>%
+    mutate(
+      Nivel_Riesgo = case_when(
+        pct_na < 0.05 ~ '1. Imputables (< 5%)',
+        pct_na <= 0.30 ~ '2. Precaución (5% - 30%)',
+        TRUE ~ '3. Riesgo Crítico (> 30% - Candidatas a borrar)'
+      ),
+      Nivel_Riesgo = factor(Nivel_Riesgo, levels = c('1. Imputables (< 5%)', 
+                                                     '2. Precaución (5% - 30%)', 
+                                                     '3. Riesgo Crítico (> 30% - Candidatas a borrar)'))
+    ) %>%
+    ggplot(aes(x = reorder(variable, pct_na), y = pct_na)) +
+    geom_col(aes(fill = Nivel_Riesgo), color = '#2c3e50', alpha = 0.9, width = 0.7) +
+    geom_text(aes(label = scales::percent(pct_na, accuracy = 0.1)), 
+              hjust = -0.1, size = 3.5, fontface = 'bold', color = '#2c3e50') +
+    coord_flip() +
+    scale_y_continuous(labels = scales::percent, expand = expansion(mult = c(0, 0.25))) +
+    scale_fill_manual(
+      values = c('1. Imputables (< 5%)' = '#2ecc71',
+                 '2. Precaución (5% - 30%)' = '#f1c40f',
+                 '3. Riesgo Crítico (> 30% - Candidatas a borrar)' = '#e74c3c'),
+      drop = FALSE
+    ) +
+    labs(title = 'Fotografía de Valores Nulos (Missing Data)',
+         subtitle = 'Clasificación de variables según la estrategia técnica recomendada para la Fase 3',
+         x = '', y = 'Porcentaje de Faltantes', fill = 'Estrategia de Tratamiento:') +
+    theme_minimal() +
+    theme(plot.title = element_text(face = 'bold'),
+          plot.subtitle = element_text(color = '#7f8c8d', face = 'italic'),
+          legend.position = 'bottom',
+          panel.grid.major.y = element_blank())
+}
+```
+
+### Conclusiones: Fotografía de Valores Nulos y Estrategia de Imputación
+
+El análisis de datos faltantes (Missings) revela patrones estructurales claros en el negocio hipotecario, dictando la estrategia exacta que nuestro *Pipeline* de datos debe ejecutar:
+
+1.  **Zona Roja: Riesgo Crítico y Nulos Estructurales (> 30%)**
+    * **Variables de condiciones de préstamo (`prepayment_penalty_term` [99.4%] e `intro_rate_period` [87.0%]):** Su ausencia casi total no es un error informático. Como vimos en el análisis univariante, el mercado de NY está dominado por hipotecas convencionales a tasa fija que carecen de periodos introductorios o penalizaciones por cancelación. **Acción:** Las eliminaremos del modelo para evitar ruido.
+    * **Edad del co-solicitante (`co_applicant_age` [57.1%]):** Este porcentaje coincide matemáticamente con el ~55.4% de solicitudes individuales ('Sin co-solicitante') que detectamos previamente. Es un nulo lógico. **Acción:** Eliminaremos esta columna, ya que la variable `co_applicant_sex` (que sí tiene una categoría de 'Sin co-solicitante') ya captura esta información estructural sin generar nulos numéricos.
+    * **La dicotomía del DTI (`debt_to_income_ratio` [47.7%]):** Es el indicador de riesgo más crítico del sector bancario, pero falta en casi la mitad de los registros (probablemente por excepciones regulatorias en ciertos tipos de préstamos o compras). **Acción de Negocio:** No podemos imputar la mitad de los datos inventándonos el endeudamiento de la gente. Transformaremos esta variable en categórica mediante *Binning* (ej. '<30%', '30-40%', '>40%') e incluiremos una categoría explícita llamada 'Desconocido/No Reportado' para que el modelo aprenda si el hecho de ocultar este dato genera más riesgo de impago que otras categorías.
+
+2.  **Zona Amarilla: Variables Financieras Clave (5% - 30%)**
+    * Los ingresos (`income`, 8.4%) y el apalancamiento (`loan_to_value_ratio`, 6.4%) presentan niveles de ausencia manejables.
+    * **Acción:** Dado que estas variables son el núcleo de la solvencia y no podemos destruir su varianza ni su correlación con el valor de la propiedad, descartamos la imputación simple (media/mediana). Aplicaremos Imputación Multivariante (K-Nearest Neighbors o Regresión) en la Fase 3. El algoritmo deducirá el ingreso faltante basándose en el comportamiento de las demás variables financieras del cliente.
+
+3.  **Zona Verde: Nulos Aleatorios e Imputables (< 5%)**
+    * Variables como el valor de la propiedad (`property_value`, 4.1%), edad del solicitante (3.8%) y datos administrativos residuales presentan carencias mínimas (menores al 5%).
+    * **Acción:** Aplicaremos técnicas estándar (Imputación por Mediana para numéricas y por la Moda/Valor más frecuente para categóricas). La integridad de la distribución está así garantizada.
