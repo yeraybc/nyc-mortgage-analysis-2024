@@ -108,14 +108,17 @@ plot_distribucion <- function(data, variable) {
   # Calculo qué porcentaje de puntos caen fuera de los límites
   pct_outliers <- sum(vector_num > limite_sup | vector_num < limite_inf) / length(vector_num)
   
+  # Creo un mini-dataframe limpio para evitar warnings de ggplot
+  data_limpia <- data %>% filter(!is.na(.data[[variable]]))
+  
   # gráficos
-  p1 <- ggplot(data, aes(x = .data[[variable]])) +
+  p1 <- ggplot(data_limpia, aes(x = .data[[variable]])) +
     geom_histogram(fill = 'steelblue', color = 'white', bins = 40, alpha = 0.8) +
     scale_x_continuous(labels = scales::comma) + 
     labs(title = paste('Histograma:', variable), x = '', y = 'Frec.') +
     theme_minimal()
   
-  p2 <- ggplot(data, aes(x = .data[[variable]])) +
+  p2 <- ggplot(data_limpia, aes(x = .data[[variable]])) +
     geom_boxplot(fill = 'lightgreen', outlier.colour = 'red', outlier.alpha = 0.3) +
     scale_x_continuous(labels = scales::comma) +
     # añado el cálculo al subtítulo
@@ -128,7 +131,6 @@ plot_distribucion <- function(data, variable) {
   
   return(p1 / p2)
 }
-
 vars_finanzas_personales <- c('income', 'loan_amount', 'property_value')
 map(vars_finanzas_personales, ~plot_distribucion(datos_eda, .x))
 ```
@@ -218,11 +220,12 @@ El análisis visual de las variables censales nos proporciona el marco geográfi
 # Función para graficar el conteo y porcentaje de cada categoría
 plot_categorica <- function(data, variable, umbral_raro = 0.05) {
   data %>%
-    filter(!is.na(.data[[variable]])) %>%
+    # Convierto los NA reales en una categoría explícita
+    mutate(!!variable := fct_explicit_na(factor(.data[[variable]]), na_level = "Falta Dato (NA)")) %>%
     count(.data[[variable]]) %>%
     mutate(
+      
       prop = n / sum(n),
-      # Creo una etiqueta dinámica basada en el porcentaje
       estado = if_else(prop < umbral_raro, 'Alerta (< 5%)', 'Seguro')
     ) %>%
     ggplot(aes(x = reorder(.data[[variable]], n), y = n, fill = estado)) +
@@ -230,13 +233,11 @@ plot_categorica <- function(data, variable, umbral_raro = 0.05) {
     geom_text(aes(label = scales::percent(prop, accuracy = 0.1)), 
               hjust = -0.1, size = 3.5, fontface = 'bold') +
     coord_flip() + 
-    # Colores semánticos: Rojo para el peligro (clase rara), Azul acero para lo normal
     scale_fill_manual(values = c('Alerta (< 5%)' = '#e74c3c', 'Seguro' = '#7f8c8d')) +
     scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.2))) +
     labs(title = paste('Distribución de:', variable), x = '', y = 'Volumen', fill = 'Diagnóstico:') +
     theme_minimal() +
-    theme(legend.position = 'bottom',
-          plot.title = element_text(face = 'bold'))
+    theme(legend.position = 'bottom', plot.title = element_text(face = 'bold'))
 }
 
 vars_perfil_soli <- c('derived_ethnicity', 'derived_race', 'derived_sex', 
@@ -332,6 +333,30 @@ El análisis de las características del inmueble y el origen de la operación n
     * La variable geográfica `derived_msa_md` (Áreas Metropolitanas) muestra una altísima concentración en 2 o 3 áreas principales de Nueva York (acumulando más del 50% de las operaciones), seguidas de una 'larga cola roja' de MSAs residuales.
     * **Acción:** Para evitar sobreajustar como en variables previas, mantendre las 4 o 5 MSAs principales y agrupare el resto (junto con el código 99999 que indica zonas no metropolitanas) en una categoría 'Otros'.
 
+### Resumen para la Fase 3 (*Feature Engineering*)
+
+El análisis univariante de las distribuciones numéricas y categóricas indica las transformaciones/medidas que debemos aplicar a los datos antes de la fase de entrenamiento. Estas acciones buscan evitar el sobreajuste (*overfitting*), reducir la dimensionalidad y eliminar ruido:
+
+* 1. Eliminación Directa
+    * **Motivo:** Varianza casi nula o redundancia con otras variables.
+    * **Variables a eliminar:** * `negative_amortization`, `balloon_payment`, `interest_only_payment`, `other_nonamortizing_features`.
+        * `manufactured_home_secured_property_type`, `manufactured_home_land_property_interest`.
+
+* 2. Agrupación de Categorías Minoritarias (*Binning*)
+    * **Motivo:** Falta de representatividad estadística (clases < 5%) que inestabilizaran el algoritmo.
+    * **Variables y Tratamiento:**
+        * **Razas y Etnias (`derived_race`, `derived_ethnicity`):** Mantener el 'Not Available' por su valor predictivo, pero agrupar minorías marginales en 'Otras Minorías'.
+        * **Edad (`applicant_age`, `co_applicant_age`):** Fusionar los extremos con baja densidad (`<25` y `>74`) con sus tramos adyacentes para consolidar el ciclo vital.
+        * **Geografía (`derived_msa_md`):** Conservar las 5 Áreas Metropolitanas principales y agrupar la 'larga cola' en 'Resto/Otros'.
+        * **Producto y Propiedad:** Agrupar `loan_type` en 'Convencional' vs 'Gubernamental'; `total_units` en '1 Unidad' vs 'Multifamiliar'; y `occupancy_type` en 'Principal' vs 'No Principal'.
+        * **Scoring Crediticio (`applicant_credit_score_type`):** Conservar los 4 modelos principales y encapsular la cola residual en 'Otros Modelos'.
+
+* 3. Discretización de Continuas (*Binning*)
+    * **Motivo:** Evitar sobreajustes a valores numéricos extremos que no reflejan finformación relevante, sino geografía o plazos tiempo fragmentados.
+    * **Variables y Tratamiento:**
+        * **Censo Macroeconómico:** Transformar `tract_population`, `ffiec_msa_md_median_family_income` y `tract_median_age_of_housing_units` en rangos ordinales (ej. Cuartiles: Bajo, Medio, Alto) para capturar el riesgo espacial sin ruido continuo y que tengan un orden capturable.
+        * **Plazos Temporales (`prepayment_penalty_term`, `intro_rate_period`):** Convertir las decenas de plazos disponibles/dispersos en rangos lógicos ('< 3 años', '> 3 años') o variables indicadoras binarias ('Tiene' vs 'No tiene').
+
 # 4. Análisis Bivariante
 
 ```{r}
@@ -360,3 +385,24 @@ corrplot::corrplot(matriz_corr,
                    title = 'Mapa de Calor',
                    mar = c(0,0,2,0))       # Margen para que el título no se corte
 ```
+
+### Conclusiones: Análisis Bivariante y Multicolinealidad
+
+El mapa de calor de correlaciones de Pearson sirve para la selección de características numéricas:
+
+1.  **Multicolinealidad Crítica (La decisión sobre `loan_amount`):**
+    * El hallazgo más contundente es la correlación casi perfecta (**0.92**) entre el importe del préstamo (`loan_amount`) y el valor de la propiedad (`property_value`). 
+    * Además, ambas comparten una alta correlación con los ingresos (`income`, 0.71 y 0.73 respectivamente).
+    * **Acción Definitiva:** Introducir ambas variables tan colineales en una Regresión Logística inestabilizará los coeficientes y las p-values. Con esto, **sentenciamos la eliminación de `loan_amount`** para la Fase 3. Mantendremos `property_value` e `income` como representación de la capacidad financiera absoluta.
+
+2.  **La Independencia del Ratio de Riesgo (LTV):**
+    * El ratio *Loan-to-Value* (`loan_to_value_ratio`) presenta correlaciones sorprendentemente bajas, e incluso negativas, con el volumen monetario absoluto (**-0.08** con el préstamo, **-0.33** con el valor de la casa).
+    * **Valor Predictivo:** Esto es muy importante para el modelo. Significa que el LTV aporta una señal de riesgo completamente independiente. Un cliente rico puede estar tan sobreapalancado porcentualmente como uno de clase media. El LTV será uno de los motores predictivos más fiables del algoritmo.
+
+3.  **Redundancia Espacial (Datos del Censo):**
+    * Observamos colinealidad fuerte dentro del bloque del censo: `tract_owner_occupied_units` tiene una correlación de **0.69** con `tract_one_to_four_family_homes` y de **0.63** con la población total (`tract_population`).
+    * **Acción:** Esto confirma nuestra estrategia a implementar en el resumen univariante. No usaremos estos números crudos. En la Fase 3, aplicaremos técnicas de agrupamiento para evitar que el algoritmo cuente la misma característica del barrio tres veces.
+
+4.  **Huella Socioeconómica:**
+    * La variable de minorías (`tract_minority_population_percent`) tiene correlaciones negativas persistentes con la riqueza relativa del barrio (**-0.39** con el % de ingresos del MSA) y con la propiedad de vivienda (**-0.36** con unidades ocupadas por sus dueños). 
+    * **Conclusión de Negocio:** Esto demuestra matemáticamente una brecha socioeconómica y de segregación residencial en los datos. El modelo corre un alto riesgo de aprender a penalizar códigos postales con alta densidad de minorías, al estar estas correlacionadas con menor riqueza. Esto subraya la importancia de realizar un análisis de Fairness final.
