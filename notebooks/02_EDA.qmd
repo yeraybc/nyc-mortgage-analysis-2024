@@ -221,7 +221,7 @@ El análisis visual de las variables censales nos proporciona el marco geográfi
 plot_categorica <- function(data, variable, umbral_raro = 0.05) {
   data %>%
     # Convierto los NA reales en una categoría explícita
-    mutate(!!variable := fct_explicit_na(factor(.data[[variable]]), na_level = "Falta Dato (NA)")) %>%
+    mutate(!!variable := fct_explicit_na(factor(.data[[variable]]), na_level = 'Falta Dato (NA)')) %>%
     count(.data[[variable]]) %>%
     mutate(
       
