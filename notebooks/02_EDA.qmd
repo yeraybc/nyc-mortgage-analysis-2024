@@ -1,7 +1,7 @@
 ---
-title: "Fase 2: Análisis Exploratorio de Datos y Fairness"
-abstract: "Objetivo: Analizar las distribuciones de las variables tras la limpieza, identificar multicolinealidad mediante correlaciones y realizar un analisis del sesgo algorítmico (Fairness)."
-author: "Yeray"
+title: 'Fase 2: Análisis Exploratorio de Datos y Fairness'
+abstract: 'Objetivo: Analizar las distribuciones de las variables tras la limpieza, identificar multicolinealidad mediante correlaciones y realizar un analisis del sesgo algorítmico (Fairness).'
+author: 'Yeray'
 date: today
 format:
   html:
@@ -24,18 +24,69 @@ execute:
 # 1. Configuración librerias y carga de datos
 
 ```{r}
+#| label: load-packages-data
+
 library(tidyverse)
 library(skimr)
-library(corrplot) # Para la matriz de correlación
+library(corrplot)
 library(patchwork)
 library(ggplot2)
 library(purrr)
 
-# Cargamos el archivo Script_01
-datos_eda <- readRDS("../data/processed/hmda_ny_limpio.rds")
+# Cargamos el archivo de la Fase 1
+datos_eda <- readRDS('../data/processed/hmda_ny_limpio.rds')
+
+# Traducción de factores para visualización
+datos_eda <- datos_eda %>%
+  mutate(
+    # demografía ---
+    
+    applicant_sex = fct_recode(applicant_sex,
+      'Hombre' = '1', 'Mujer' = '2', 'No provisto' = '3', 'No aplicable' = '4', 'Ambos' = '6'),
+    
+    co_applicant_sex = fct_recode(co_applicant_sex,
+      'Hombre' = '1', 'Mujer' = '2', 'No provisto' = '3', 'No aplicable' = '4', 'Sin co-solicitante' = '5', 'Ambos' = '6'),
+
+    # condiciones del préstamo ---
+    
+    loan_type = fct_recode(loan_type,
+      'Convencional' = '1', 'FHA' = '2', 'VA' = '3', 'FSA/RHS' = '4'),
+      
+    conforming_loan_limit = fct_recode(conforming_loan_limit,
+      'Conforme' = 'C', 'No Conforme' = 'NC'),
+      
+    lien_status = fct_recode(lien_status,
+      'Primera hipoteca' = '1', 'Segunda hipoteca' = '2'),
+
+    # Variables Binarias (1 = Sí, 2 = No)
+    across(c(negative_amortization, interest_only_payment, balloon_payment, other_nonamortizing_features),
+           ~ fct_recode(.x, 'Sí' = '1', 'No' = '2')),
+
+    # características de la propiedad ---
+    
+    construction_method = fct_recode(construction_method,
+      'Tradicional' = '1', 'Prefabricada' = '2'),
+      
+    occupancy_type = fct_recode(occupancy_type,
+      'Residencia Principal' = '1', 'Segunda Residencia' = '2', 'Inversión' = '3'),
+      
+    manufactured_home_secured_property_type = fct_recode(manufactured_home_secured_property_type,
+      'Casa y Terreno' = '1', 'Solo Casa' = '2', 'No aplicable' = '3'),
+      
+    manufactured_home_land_property_interest = fct_recode(manufactured_home_land_property_interest,
+      'Propiedad Directa' = '1', 'Propiedad Indirecta' = '2', 'Arrendamiento Pagado' = '3', 'Arrendamiento Impagado' = '4', 'No aplicable' = '5'),
+
+    # origen de solicitud ---
+    
+    submission_of_application = fct_recode(submission_of_application,
+      'Directa al Banco' = '1', 'Broker/Indirecta' = '2'),
+      
+    initially_payable_to_institution = fct_recode(initially_payable_to_institution,
+      'Al Banco' = '1', 'A un Tercero' = '2', 'No aplicable' = '3')
+  )
 ```
 
-# 2. Análisis Univariante: Distribuciones {.tabset}
+# 2. Análisis Univariante (Numéricas) {.tabset}
 
 ## Finanzas Personales
 
@@ -45,25 +96,57 @@ datos_eda <- readRDS("../data/processed/hmda_ny_limpio.rds")
 #| fig-height: 8
 
 plot_distribucion <- function(data, variable) {
+  
+  # Extraigo la variable, quito NAs y calculo los límites del Boxplot (Tukey)
+  vector_num <- na.omit(data[[variable]])
+  q1 <- quantile(vector_num, 0.25)
+  q3 <- quantile(vector_num, 0.75)
+  iqr <- q3 - q1
+  limite_sup <- q3 + 1.5 * iqr
+  limite_inf <- q1 - 1.5 * iqr
+  
+  # Calculo qué porcentaje de puntos caen fuera de los límites
+  pct_outliers <- sum(vector_num > limite_sup | vector_num < limite_inf) / length(vector_num)
+  
+  # gráficos
   p1 <- ggplot(data, aes(x = .data[[variable]])) +
     geom_histogram(fill = 'steelblue', color = 'white', bins = 40, alpha = 0.8) +
     scale_x_continuous(labels = scales::comma) + 
-    labs(title = paste('Histograma:', variable), x = "", y = 'Frec.') +
+    labs(title = paste('Histograma:', variable), x = '', y = 'Frec.') +
     theme_minimal()
   
   p2 <- ggplot(data, aes(x = .data[[variable]])) +
-    geom_boxplot(fill = "lightgreen", outlier.colour = 'red', outlier.alpha = 0.3) +
+    geom_boxplot(fill = 'lightgreen', outlier.colour = 'red', outlier.alpha = 0.3) +
     scale_x_continuous(labels = scales::comma) +
-    labs(title = paste('Boxplot:', variable), x = variable) +
+    # añado el cálculo al subtítulo
+    labs(title = paste('Boxplot:', variable), 
+         subtitle = paste('Datos en cola (fuera de bigotes IQR):', scales::percent(pct_outliers, accuracy = 0.1), '- (Seguros/Tratados por Winsorización)'),
+         x = variable) +
     theme_minimal() +
-    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+          plot.subtitle = element_text(color = '#7f8c8d', face = 'italic'))
   
   return(p1 / p2)
 }
 
-vars_finanzas_personales <- c("income", "loan_amount", "property_value")
+vars_finanzas_personales <- c('income', 'loan_amount', 'property_value')
 map(vars_finanzas_personales, ~plot_distribucion(datos_eda, .x))
 ```
+
+### Conclusiones: Finanzas Personales
+
+El análisis visual de las tres variables financieras principales revela una fuerte coherencia con la realidad del mercado inmobiliario y valida la estrategia que he seguido en el preprocesamiento (Winsorización) aplicada en la Fase 1:
+
+1.  **El Perfil del Cliente ('Income' y 'Property Value'):**
+    * Ambas distribuciones presentan una asimetría positiva severa (sesgo a la derecha), característica típica de la distribución de la riqueza en el mundo.
+    * El núcleo del negocio hipotecario en Nueva York se concentra en solicitantes con ingresos entre **100k$ - 150k$**  que adquieren propiedades valoradas entre  **150k$ - 800k$**. Nuestro futuro modelo tendrá su máxima precisión y confianza estadística en este segmento de clase media/media-alta.
+
+2.  **Validación del Tratamiento de Colas (Outliers):**
+    * El Boxplot confirma que mantengo de forma segura un volumen importante de operaciones en la cola derecha (ej. 8.6% en ingresos, 6.1% en valor de propiedad). 
+    * El efecto del límite al percentil 99 (Winsorización) es visible en el extremo de los histogramas, protegiendo al futuro algoritmo de casosmultimillonarios atípicos sin perder la información valiosa de esos clientes, lo que ocurriría si hiciese un tratamiento típico en outliers.
+    
+3.  **Similitud Estructural ('Loan Amount' vs 'Property Value'):**
+    * Visualmente, la curva de distribución del importe del préstamo es un reflejo casi idéntico a la del valor de la propiedad, simplemente desplazada hacia la izquierda (lo cual representa el pago inicial o entrada que aportan los clientes). Esta similitud visual tan fuerte nos da una primera pista de que ambas variables podrían estar midiendo el mismo fenómeno subyacente, algo que analizaré matemáticamente en el análisis bivariante.
 
 ## Ratios de Riesgo
 
@@ -72,8 +155,23 @@ map(vars_finanzas_personales, ~plot_distribucion(datos_eda, .x))
 #| fig-width: 10
 #| fig-height: 4
 
-plot_distribucion(datos_eda, "loan_to_value_ratio")
+plot_distribucion(datos_eda, 'loan_to_value_ratio')
 ```
+
+### Conclusiones: Ratios de Riesgo
+
+El análisis visual del ratio *Loan-to-Value* (LTV) nos proporciona una visión exacta del nivel de apalancamiento de la cartera del banco, mostrando un comportamiento radicalmente distinto al de las variables de perfil monetario:
+
+1.  **Distribución Multimodal y Apalancamiento:**
+    * A diferencia de los ingresos, el LTV no presenta una única campana, sino picos de concentración que responden a posibles reglas de negocio y regulatorias. 
+    * El pico claro en el **80%** representa el estándar de la industria (el umbral para evitar seguros de hipoteca privados). Sin embargo, el pico masivo cercano al **100%** revela que una gran parte del negocio del banco en Nueva York se basa en operaciones altamente apalancadas, típicas de primeros compradores o programas gubernamentales (FHA/VA), lo que supone una mayor exposición al riesgo de impago.
+
+2.  **Estabilidad Estadística y Colas:**
+    * El Boxplot demuestra que esta variable es estadísticamente mucho más estable que los ingresos, con solo un **2.5%** de datos en las colas (fuera de los bigotes IQR).
+    * La Winsorización previa ha sido un éxito: topo matemáticamente los valores justo por encima del 100%, lo que nos protege de errores de digitación irracionales (ej. LTVs del 150%) pero nos permite mantener y estudiar el riesgo real de las hipotecas financiadas al 100%.
+  
+3.  **Aislamiento del Riesgo:**
+    * La forma de esta distribución confirma que el banco asume riesgos porcentuales altísimos (préstamos al 100%) con gran frecuencia. Esta métrica de exposición relativa será fundamental para que el modelo predictivo entienda el riesgo de impago, independientemente de si la casa vale cien mil o un millón de dólares.
 
 ## Datos de Censos
 
@@ -82,42 +180,183 @@ plot_distribucion(datos_eda, "loan_to_value_ratio")
 #| fig-width: 10
 #| fig-height: 12
 
-vars_censo <- c("tract_population", 
-                "tract_minority_population_percent", 
-                "ffiec_msa_md_median_family_income", 
-                "tract_to_msa_income_percentage", 
-                "tract_owner_occupied_units", 
-                "tract_one_to_four_family_homes", 
-                "tract_median_age_of_housing_units")
+vars_censo <- c('tract_population', 
+                'tract_minority_population_percent', 
+                'ffiec_msa_md_median_family_income', 
+                'tract_to_msa_income_percentage', 
+                'tract_owner_occupied_units', 
+                'tract_one_to_four_family_homes', 
+                'tract_median_age_of_housing_units')
 
 map(vars_censo, ~plot_distribucion(datos_eda, .x))
 ```
 
-# 3. Análisis Bivariante
+### Conclusiones: Datos del Censo (Contexto Macroeconómico)
+
+El análisis visual de las variables censales nos proporciona el marco geográfico y socioeconómico en el que se desarrollan las operaciones, revelando patrones estructurales muy distintos a las finanzas individuales:
+
+1.  **Estabilidad Estructural y Normalidad:**
+    * Variables como `tract_population` o `tract_to_msa_income_percentage` presentan distribuciones normales clásicas. Esto refleja el diseño administrativo de los distritos censales y proporciona un contexto muy estable para medir la riqueza relativa del vecindario frente a la ciudad en general.
+
+2.  **Huella Socio-Demográfica (Fairness):**
+    * La distribución de `tract_minority_population_percent` muestra un claro sesgo hacia proporciones bajas, pero exhibe un repunte significativo en el extremo del 100%. Esta bimodalidad es un reflejo matemático de la segregación residencial histórica. Nos alerta de que el código postal o el barrio conllevan una carga demográfica fuerte, lo cual será algo crítico a tratar en nuestra evaluación del *Disparate Impact*.
+
+3.  **Alertas de Datos y Discretización:**
+    * Observo un pico atípico masivo en el valor '0' de `tract_median_age_of_housing_units`, lo que indica un probable código de relleno para datos desconocidos o distritos no residenciales, más que un boom de nuevas construcciones.
+    * Los ingresos medianos del área (`ffiec_msa_md...`) muestran distribuciones discretas (en forma de 'código de barras') al compartir el mismo valor oficial de su Área Metropolitana.
+    * **Acción:** Dado que estas variables describen la geografía y presentan picos estructurales y anomalías (como el 0 en edad), tratarlas como valores numéricos puros puede inestabilizar el algoritmo. En la Fase 3 de modelado, realizare una **discretización de estas variables**, transformándolas en categorías ordinales para que el modelo capture el riesgo espacial sin sufrir sobreajuste por extremos numéricos.
+
+# 3. Análisis Univariante (Categóricas) {.tabset}
+
+## Perfil Solicitante
+
+```{r}
+#| label: univariante-cat-perfil
+#| fig-width: 10
+#| fig-height: 4
+
+# Función para graficar el conteo y porcentaje de cada categoría
+plot_categorica <- function(data, variable, umbral_raro = 0.05) {
+  data %>%
+    filter(!is.na(.data[[variable]])) %>%
+    count(.data[[variable]]) %>%
+    mutate(
+      prop = n / sum(n),
+      # Creo una etiqueta dinámica basada en el porcentaje
+      estado = if_else(prop < umbral_raro, 'Alerta (< 5%)', 'Seguro')
+    ) %>%
+    ggplot(aes(x = reorder(.data[[variable]], n), y = n, fill = estado)) +
+    geom_col(color = 'white', alpha = 0.9) +
+    geom_text(aes(label = scales::percent(prop, accuracy = 0.1)), 
+              hjust = -0.1, size = 3.5, fontface = 'bold') +
+    coord_flip() + 
+    # Colores semánticos: Rojo para el peligro (clase rara), Azul acero para lo normal
+    scale_fill_manual(values = c('Alerta (< 5%)' = '#e74c3c', 'Seguro' = '#7f8c8d')) +
+    scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.2))) +
+    labs(title = paste('Distribución de:', variable), x = '', y = 'Volumen', fill = 'Diagnóstico:') +
+    theme_minimal() +
+    theme(legend.position = 'bottom',
+          plot.title = element_text(face = 'bold'))
+}
+
+vars_perfil_soli <- c('derived_ethnicity', 'derived_race', 'derived_sex', 
+                 'applicant_sex', 'co_applicant_sex', 'applicant_age', 
+                 'co_applicant_age', 'debt_to_income_ratio', 
+                 'applicant_credit_score_type', 'co_applicant_credit_score_type')
+
+map(vars_perfil_soli, ~plot_categorica(datos_eda, .x))
+```
+
+### Conclusiones: Perfil del Solicitante
+
+El análisis de las variables demográficas y de solvencia revela patrones estructurales clave sobre la base de clientes en Nueva York, al tiempo que dispara alertas visuales rojas que exigen un tratamiento inmediato de agrupación (*Binning*) para no perder información relevantes antes/durante del modelado:
+
+1.  **Demografía y el Valor del 'Dato Faltante':**
+    * Variables como `derived_race`, `derived_ethnicity` y sexo presentan un volumen significativo de valores 'Not Available' o 'No provisto' (entre el 5% y el 17%). 
+    * **Acción y Justificación:** A diferencia de un error de sistema, en el contexto HMDA esto refleja el derecho legal del cliente a no revelar su demografía. No eliminare estas filas. Esta etiqueta se mantendrá intacta en la Fase 3, ya que la propia negativa a dar la información popuede resultar en un poder predictivo sobre el riesgo o la tasa de aprobación.
+    * **Agrupación de Minorías:** Las múltiples alertas rojas (< 5%) en razas minoritarias (ej. *Native Hawaiian*, *American Indian*) indican falta de masa crítica estadística. Si las introducimos sin tratamiento (**Binning**), el algoritmo sufrirá de sobreajuste intentando aprender de grupos minúsculos dificilmente perceptibles, es por ello que en la Fase 3, transformare y agrupare estas categorías bajo una etiqueta robusta como 'Otras Minorías', con el objetivo de ser mas repesentativas en conjunto.
+
+2.  **Estructura Familiar y Ciclo Vital:**
+    * El mercado neoyorquino está dominado por operaciones individuales: un **55.4%** de las solicitudes se presentan 'Sin co-solicitante'. 
+    * El núcleo del negocio (más del 60%) se concentra en la generación *Millennial* y *Gen X* (25 - 44 años). Las alertas rojas saltan lógicamente en los extremos poblacionales (<25 y >74 años). 
+    * **Acción:** Para mejorar matemáticamente la Regresión Logística que aplicare al tratar de una variable objetivo binaria, simplificare la dimensionalidad de la edad fusionando estos extremos poco representativos con sus grupos adyacentes (ej. agrupare '<25' dentro de la categoría '25-34', al igual que '>75' con '65-74').
+
+3.  **Métricas de Solvencia (DTI y Scoring):**
+    * El ratio de endeudamiento (`debt_to_income_ratio`) presenta una distribución muy sana y balanceada en bloques, sin alertas de clases raras. Es notable que un 20.0% no reporta este dato.
+    * Por el contrario, el modelo de puntuación crediticia (`applicant_credit_score_type`) tiene una larga 'cola' de modelos residuales (códigos 7, 8, 14, 15...) que apenas representan unas décimas porcentuales.
+    * **Acción:** Aplicare una limpieza similar a decisiones previas: mantendre intactos los 4 modelos de *Scoring* principales (que concentran cerca del 95% del volumen de la variable) y agrupare toda la 'cola roja' en una nueva categoría llamada ('Otros Modelos'), de forma que de un mayor volumen en la variable a estas categorias independientes minoritarias.
+
+## Condiciones Préstamo
+
+```{r}
+#| label: univariante-cat-prestamo
+#| fig-width: 10
+#| fig-height: 4
+
+vars_prestamo <- c('loan_type', 'derived_loan_product_type', 'conforming_loan_limit', 
+                   'lien_status', 'prepayment_penalty_term', 'intro_rate_period', 
+                   'negative_amortization', 'interest_only_payment', 
+                   'balloon_payment', 'other_nonamortizing_features')
+
+map(vars_prestamo, ~plot_categorica(datos_eda, .x))
+```
+
+### Conclusiones: Condiciones del Préstamo
+
+El análisis visual de las características del préstamo revela un mercado hipotecario altamente estandarizado y conservador. Esta homogeneidad genera alertas rojas masivas que nos obligan a aplicar técnicas de reducción de dimensionalidad y eliminación de variables constantes para el futuro modelo:
+
+1.  **Dominio Convencional y Agrupación de Productos:**
+    * Las variables `loan_type` y `derived_loan_product_type` muestran que casi el **85-87%** del mercado es puramente 'Convencional' (y en su inmensa mayoría, 'Primera Hipoteca').
+    * Los préstamos de programas gubernamentales como VA (Veteranos) o FSA/RHS (Agricultura) representan fracciones marginales (<3%), haciendo saltar nuestras alertas rojas del gráfico.
+    * **Acción:** Para evitar que el algoritmo se pierda intentando buscar patrones en nichos minúsculos, en la Fase 3 creare una nueva variable binaria o agrupada mediante **Binning** como he hecho anteriormente(ej. 'Convencional' vs. 'Gubernamental/Otros').
+
+2.  **Alta Fragmentación Temporal:**
+    * Las variables relacionadas con plazos temporales (`prepayment_penalty_term` y `intro_rate_period`) están extremadamente fragmentadas. Aunque hay duraciones comunes (como 36 meses), existe una 'larga cola' de decenas de plazos minoritarios (1, 2, 84 meses...).
+    * **Acción y Justificación:** Introducir una variable categórica con 20 o 30 niveles con tan pocos datos destrozaría un modelo de árboles de decisión (demasiadas ramas sin peso estadístico) o un modelo de Regresión Logística, por lo que la estrategia será simplificar estas variables agrupándolas en bloques lógicos (ej. 'Sin penalización', '< 3 años', '> 3 años') o convirtiéndolas en variables indicadoras binarias ('Tiene periodo intro' vs. 'No tiene'), son algunos ejemplos a realizar, mas adelante decidire cual desempeñare.
+
+3.  **El Fenómeno a evitar: 'Near-Zero Variance' (Características Tóxicas)**
+    * Los gráficos de características no amortizables (`negative_amortization`, `balloon_payment`, `interest_only_payment`, `other_nonamortizing_features`) son lo más importante de esta sección. Esto se debe a que estas prácticas de alto riesgo, que eran común antes de 2008, hoy representan entre el **0.0% y el 6.0%**.
+    * **Acción:** Si mantengo una columna como `negative_amortization` donde el 100.0% de las filas dice 'No', el modelo que utilizo no aprendera nada. Es por ello que en la Fase 3, **eliminare por completo** aquellas variables con este comportamiento (las que superen el 98-99% de homogeneidad), ya que matemáticamente no aportan ningún poder predictivo para diferenciar a un buen pagador de uno malo.
+
+## Propiedad y operación
+
+```{r}
+#| label: univariante-cat-propiedad
+#| fig-width: 10
+#| fig-height: 4
+
+vars_propiedad <- c('derived_dwelling_category', 'construction_method', 'occupancy_type', 
+                    'manufactured_home_secured_property_type', 
+                    'manufactured_home_land_property_interest', 'total_units', 
+                    'derived_msa_md', 'submission_of_application', 
+                    'initially_payable_to_institution')
+
+map(vars_propiedad, ~plot_categorica(datos_eda, .x))
+```
+
+### Conclusiones: Propiedad y Operación
+
+El análisis de las características del inmueble y el origen de la operación nos muestra un mercado altamente concentrado en viviendas tradicionales, lo que implica una reducción de dimensionalidad y eliminación de características redundantes:
+
+1.  **Hegemonía de la Construcción Tradicional y Redundancia:**
+    * El mercado inmobiliario está dominado casi en su totalidad por propiedades unifamiliares construidas in situ (`construction_method` es 96.4% 'Tradicional' y `total_units` es 88.1% de '1' unidad).
+    * **Acción (Eliminación por Redundancia):** Al haber solo un 3.6% de casas prefabricadas, las variables específicas para este nicho (`manufactured_home_secured_property_type` y `manufactured_home_land_property_interest`) tienen más del 96% de sus datos como 'No aplicable'. Para evitar futuros problemas de  dimensionalidad/multicolinealidad, **eliminare estas dos variables derivadas** en la Fase 3, ya que la variable `construction_method` (Tradicional vs. Prefabricada) ya captura perfectamente esta información.
+
+2.  **Uso de la Propiedad y Agrupación de Unidades:**
+    * El 85.6% de las hipotecas son para 'Residencia Principal'. Las segundas residencias (3.0%) caen en zona de alerta roja.
+    * La variable `total_units` tiene una larga cola de propiedades multifamiliares (2, 3, 4, 5-24 unidades...) que individualmente carecen de importancia.
+    * **Acción:** En la Fase 3, aplicare **Binning** para agrupar todas las propiedades de más de 1 unidad bajo una única etiqueta ('>1 Unidad'). De igual forma, fusionare 'Inversión' y 'Segunda Residencia' en una categoría conjunta de 'No Principal' si el algoritmo necesita más contraste, ya que le será difícil capturar categorías tan poco representativas.
+
+3.  **Geografía Operativa (MSA) y Origen:**
+    * El canal de entrada (`submission_of_application`) está muy sano y balanceado, con un sólido 21.7% de operaciones viniendo a través de Brokers/Terceros.
+    * La variable geográfica `derived_msa_md` (Áreas Metropolitanas) muestra una altísima concentración en 2 o 3 áreas principales de Nueva York (acumulando más del 50% de las operaciones), seguidas de una 'larga cola roja' de MSAs residuales.
+    * **Acción:** Para evitar sobreajustar como en variables previas, mantendre las 4 o 5 MSAs principales y agrupare el resto (junto con el código 99999 que indica zonas no metropolitanas) en una categoría 'Otros'.
+
+# 4. Análisis Bivariante
 
 ```{r}
 #| label: matriz-correlacion
-#| fig-cap: "Matriz de Correlación (Pearson) de Variables Numéricas"
+#| fig-cap: 'Matriz de Correlación (Pearson) de Variables Numéricas'
 #| fig-width: 9
 #| fig-height: 9
 
-# Filtramos solo las variables numéricas
+# Filtro solo las variables numéricas
 datos_num <- datos_eda %>%
   select(where(is.numeric)) 
 
-# Calculamos la matriz de correlación
-matriz_corr <- cor(datos_num, use = "pairwise.complete.obs")
+# Calculo la matriz de correlación
+matriz_corr <- cor(datos_num, use = 'pairwise.complete.obs')
 
 # Visualizamos 
 corrplot::corrplot(matriz_corr, 
-                   method = "color",       # Usamos como metodo paleta un gradiente de color
-                   type = "upper",         # Muestra solo el triángulo superior 
-                   addCoef.col = "black",  # Muestra los coeficientes en negro
+                   method = 'color',       # Uso como metodo paleta un gradiente de color
+                   type = 'upper',         # Muestra solo el triángulo superior 
+                   addCoef.col = 'black',  # Muestra los coeficientes en negro
                    number.cex = 0.7,       # Tamaño de la fuente de los números
-                   tl.col = "black",       # Coloreamo las etiquetas de las variables
-                   tl.srt = 45,            # Rotamos las etiquetas 45 grados 
-                   col = colorRampPalette(c("#D73027", "#FFFFFF", "#4575B4"))(200), # Aplicamos una paleta divergente
-                   diag = FALSE,           # No mostramos la diagonal (es 1)
-                   title = "Mapa de Calor",
+                   tl.col = 'black',       # Coloreo las etiquetas de las variables
+                   tl.srt = 45,            # Roto las etiquetas 45 grados 
+                   col = colorRampPalette(c('#D73027', '#FFFFFF', '#4575B4'))(200), # Aplico una paleta divergente
+                   diag = FALSE,           # No muestro la diagonal (es 1)
+                   title = 'Mapa de Calor',
                    mar = c(0,0,2,0))       # Margen para que el título no se corte
 ```
