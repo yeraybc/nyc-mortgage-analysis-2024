@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Análisis de Hipotecas NYC - Portfolio</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
+        h1 { color: #2c3e50; border-bottom: 2px solid #eee; }
+        .phase-card { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #3498db; }
+        a { color: #3498db; text-decoration: none; font-weight: bold; }
+        a:hover { text-decoration: underline; }
+        .status { font-size: 0.8em; padding: 3px 8px; border-radius: 4px; background: #e0e0e0; }
+        .completed { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <h1>📌 Análisis de Concesión de Hipotecas (NYC 2024)</h1>
+    <p>Bienvenido al repositorio interactivo del proyecto. Aquí puedes navegar por las distintas fases del análisis:</p>
+
+    <div class="phase-card">
+        <h3>Fase 1: Limpieza de Datos</h3>
+        <p>Procesamiento inicial y tipado de variables.</p>
+        <span class="status completed">✅ Finalizado</span>
+    </div>
+
+    <div class="phase-card">
+        <h3>Fase 2: Análisis Exploratorio (EDA)</h3>
+        <p>Estudio de nulos, correlaciones y análisis de Fairness (Sesgo Legal).</p>
+        <a href="notebooks/02_EDA.html">👉 Ver Informe Interactivo</a>
+    </div>
+
+    <div class="phase-card">
+        <h3>Fase 3: Modelado Predictivo</h3>
+        <p>Entrenamiento de algoritmos y optimización de hiperparámetros.</p>
+        <a href="notebooks/03_Modelado.html">⏳ Próximamente</a>
+    </div>
+
+    <footer>
+        <hr>
+        <p>Desarrollado por Yeraybc - 2024</p>
+    </footer>
+</body>
+</html>
