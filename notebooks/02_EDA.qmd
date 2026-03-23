@@ -20,6 +20,7 @@ execute:
   warning: false
   message: false
 ---
+[🏠 Volver al Índice Principal](../index.html)
 
 # 1. Configuración librerias y carga de datos
 
