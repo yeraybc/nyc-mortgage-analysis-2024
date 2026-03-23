@@ -12,9 +12,9 @@ format:
     embed-resources: true
 ---
 
-[🏠 Volver al Índice Principal](../index.html)
+[Volver al Índice Principal](../index.html)
 
-# 1. Configuración librerias y carga de datos
+# 1. Configuración librerías, carga de datos y traducción valores
 
 ```{r}
 #| label: load-packages-data
@@ -214,7 +214,7 @@ El análisis visual de las variables censales nos proporciona el marco geográfi
 plot_categorica <- function(data, variable, umbral_raro = 0.05) {
   data %>%
     # Convierto los NA reales en una categoría explícita
-    mutate(!!variable := fct_explicit_na(factor(.data[[variable]]), na_level = 'Falta Dato (NA)')) %>%
+    mutate(!!variable := fct_na_value_to_level(factor(.data[[variable]]), level = 'Falta Dato (NA)')) %>%
     count(.data[[variable]]) %>%
     mutate(
       
@@ -410,7 +410,7 @@ En el sector bancario, debemos garantizar la equidad algorítmica y cumplir con 
 
 ```{r}
 #| label: fairness-audit
-#| fig-cap: 'Análisis de Equidad: Semáforo de Riesgo e Impacto Adverso (AIR)'
+#| fig-cap: 'Análisis de Sesgo Algoritmico: Semáforo de Riesgo e Impacto Adverso (AIR)'
 #| fig-width: 12
 #| fig-height: 5
 
@@ -418,9 +418,9 @@ library(patchwork)
 
 plot_fairness <- function(data, variable_demografica, titulo, target_var = 'target') {
   
-  # Agrupamos primero para poder extraer el grupo con la tasa máxima
+  # Agrupamos
   data_agrupada <- data %>%
-    mutate(!!variable_demografica := fct_explicit_na(factor(.data[[variable_demografica]]), na_level = 'Falta Dato')) %>%
+    mutate(!!variable_demografica := fct_na_value_to_level(factor(.data[[variable_demografica]]), level = 'Falta Dato')) %>%
     group_by(.data[[variable_demografica]]) %>%
     summarise(
       Total = n(),
@@ -429,13 +429,13 @@ plot_fairness <- function(data, variable_demografica, titulo, target_var = 'targ
     ) %>%
     filter(Total > 100)
     
-  # Cálculos legales (Media y Regla del 80% sobre el grupo más favorecido)
+  # Cálculos legales
   media_global <- mean(as.numeric(as.character(data[[target_var]])), na.rm = TRUE)
   tasa_maxima <- max(data_agrupada$Tasa_Aprobacion, na.rm = TRUE)
   umbral_legal_80 <- tasa_maxima * 0.80
   
-  # Generamos el gráfico
-  data_agrupada %>%
+  # Generamos el gráfico y lo guardamos en la variable 'p'
+  p <- data_agrupada %>%
     mutate(
       Etiqueta_Eje = paste0(.data[[variable_demografica]], ' (n=', scales::comma(Total), ')'),
       Nivel_Riesgo = case_when(
@@ -464,14 +464,17 @@ plot_fairness <- function(data, variable_demografica, titulo, target_var = 'targ
     theme_minimal() +
     theme(plot.title = element_text(face = 'bold'),
           panel.grid.major.y = element_blank())
+          
+  # Obligamos a la función a devolver el gráfico
+  return(p)
 }
 
 # Generamos los sub-gráficos
 p_raza <- plot_fairness(datos_eda, 'derived_race', 'Por Raza') + theme(legend.position = 'none')
 p_sexo <- plot_fairness(datos_eda, 'derived_sex', 'Por Sexo') 
 
-# Unificamos todo con Patchwork centralizando la leyenda de ambos
-(p_raza | p_sexo) + 
+# Unificamos todo con Patchwork y lo guardamos en una variable
+grafico_final <- (p_raza | p_sexo) + 
   plot_annotation(
     title = 'Análisis de Sesgo Algorítmico (Disparate Impact)',
     subtitle = 'Línea de Riesgo calculada mediante la Regla del 80% (EEOC) respecto al grupo mayoritario/líder.',
@@ -480,6 +483,8 @@ p_sexo <- plot_fairness(datos_eda, 'derived_sex', 'Por Sexo')
   ) +
   plot_layout(guides = 'collect') & 
   theme(legend.position = 'bottom', legend.justification = 'center')
+
+print(grafico_final)
 ```
 
 ### Conclusiones: Análisis de Sesgo (Fairness)
@@ -562,7 +567,7 @@ if(nrow(missings_df) == 0) {
 }
 ```
 
-El análisis de datos faltantes (Missings) revela que la gran mayoría de los NAs no son errores de recolección, sino patrones estructurales del mercado hipotecario neuyorquino. Esto dicta una estrategia minuciosa para nuestro *Pipeline* en la Fase 3:
+El análisis de datos faltantes (Missings) revela que la gran mayoría de los NAs no son errores de recolección, sino patrones estructurales del mercado hipotecario neoyorquino. Esto dicta una estrategia minuciosa para nuestro *Pipeline* en la Fase 3:
 
 1.  **Zona Roja: Riesgo Crítico y Nulos Estructurales (> 40%)**
     * **Penalizaciones (`prepayment_penalty_term` [99.4%]):** Su ausencia casi total confirma que las hipotecas convencionales en NY carecen de estas cláusulas. **Acción:** Eliminación directa por varianza cuasi-nula.

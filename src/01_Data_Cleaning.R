@@ -1,16 +1,16 @@
-# SCRIPT: 01_Data_Cleaning.R
-# OBJETIVO: Extraer, manipular datos y tipificación de variables
+# Script técnico: 01_Data_Cleaning.R
+# Objetivo: Extraer, manipular datos y tipificación de variables
 
-# 1.CARGA LIBRERIAS
+# 1. Carga de librerías
 library(tidyverse)
 library(vroom)  
 library(janitor)   
 library(skimr)
 
-# 2.CONFIGURACIÓN DE SEMILLA Y CARGA
+# 2.Configuración de datos y establecimiento se semilla
 set.seed(1234)
 
-data_path <- "data/raw/hmda_ny_homepurchase.csv"
+data_path <- 'data/raw/hmda_ny_homepurchase.csv'
 
 # Cargamos todo como 'character' inicialmente para evitar truncamiento de datos
 raw_data <- vroom(data_path, col_types = cols(.default = 'c'))
@@ -19,31 +19,31 @@ raw_data <- vroom(data_path, col_types = cols(.default = 'c'))
 glimpse(raw_data)
 
 
-# 3. SELECCIÓN DE VARIABLES PARA LIMPIEZA 
+# 3. Selección de variables para la limpieza
 # Definimos las variables que NO aportan valor predictivo
 # Usaremos expresiones regulares para capturar la estructura de todas las variables
 
 # Variables que no aportan variabilidad (Constantes en NY 2024)
-cols_constantes <- c("activity_year", "state_code", "loan_purpose")
+cols_constantes <- c('activity_year', 'state_code', 'loan_purpose')
 
-# Variables de "Data Leakage" (Información post-decisión que sesga el modelo)
+# Variables de 'Data Leakage' (Información post-decisión que sesga el modelo)
 cols_fuga <- c(
-  "interest_rate", "rate_spread", "total_loan_costs", "total_points_and_fees", 
-  "origination_charges", "discount_points", "lender_credits", "loan_term",
-  "denial_reason_1", "denial_reason_2", "denial_reason_3", "denial_reason_4",
-  "purchaser_type", "preapproval", "hoepa_status"
+  'interest_rate', 'rate_spread', 'total_loan_costs', 'total_points_and_fees', 
+  'origination_charges', 'discount_points', 'lender_credits', 'loan_term',
+  'denial_reason_1', 'denial_reason_2', 'denial_reason_3', 'denial_reason_4',
+  'purchaser_type', 'preapproval', 'hoepa_status'
 )
 
 # Variables de Redundancia (Multicolinealidad)
 cols_proceso_redundancia <- c(
-  "applicant_age_above_62", "co_applicant_age_above_62", # Duplicidad con applicant_age
-  "lei", "census_tract", "county_code",                   
-  "open_end_line_of_credit",
-  "reverse_mortgage",   # No aplican a Home Purchase estándar
-  "business_or_commercial_purpose" # No aplican a Home Purchase estándar
+  'applicant_age_above_62', 'co_applicant_age_above_62', # Duplicidad con applicant_age
+  'lei', 'census_tract', 'county_code',                   
+  'open_end_line_of_credit',
+  'reverse_mortgage',   # No aplican a Home Purchase estándar
+  'business_or_commercial_purpose' # No aplican a Home Purchase estándar
 )
 
-# 4. PIPELINE DE TRANSFORMACION
+# 4. Pipeline de transformación
 
 # Definimos los niveles para los factores ordinales
 niveles_unidades <- c('1','2','3','4','5-24','25-49','50-99','100-149','>149')
@@ -61,17 +61,17 @@ datos_final <- raw_data %>%
     -any_of(cols_constantes),
     -any_of(cols_fuga),
     -any_of(cols_proceso_redundancia),
-    -starts_with("aus"),           # Sistemas de scoring internos
-    -contains("observed"),         # Método de recolección (evitamos ruido operativo)
-    -matches("ethnicity_[1-5]"),   # Usaremos las versiones 'derived'
-    -matches("race_[1-5]"),         # Usaremos las versiones 'derived'
+    -starts_with('aus'),           # Sistemas de scoring internos
+    -contains('observed'),         # Método de recolección (evitamos ruido operativo)
+    -matches('ethnicity_[1-5]'),   # Usaremos las versiones 'derived'
+    -matches('race_[1-5]'),         # Usaremos las versiones 'derived'
     -multifamily_affordable_units #Eliminada por 99% de NAs
   ) %>%
   
   # Solo tendremos en cuenta decisiones finales (1 = Aprobado, 3 = Denegado)
-  filter(action_taken %in% c("1", "3")) %>%
-  mutate(target = factor(if_else(action_taken == "1", "1", "0"), 
-                         levels = c("0", "1"))) %>%
+  filter(action_taken %in% c('1', '3')) %>%
+  mutate(target = factor(if_else(action_taken == '1', '1', '0'), 
+                         levels = c('0', '1'))) %>%
   select(-action_taken) %>%   # Eliminamos la variable original para que el modelo no haga trampa si la mantenemos
   
   # Modificación valores exentos, texto libre, valores erroneos
@@ -82,7 +82,7 @@ datos_final <- raw_data %>%
       valor_limpio <- str_trim(.x)
       # Aplicamos el filtro de seguridad de palabras no admitidas
       case_when(
-        valor_limpio %in% c("1111", "Exempt", "U", "Free Form Text Only", "NA", "8888", "9999") ~ NA_character_,
+        valor_limpio %in% c('1111', 'Exempt', 'U', 'Free Form Text Only', 'NA', '8888', '9999') ~ NA_character_,
         TRUE ~ valor_limpio
       )
     }
@@ -91,7 +91,7 @@ datos_final <- raw_data %>%
   # Conversion a numéricas y winsorización
   mutate(across(
     c(loan_to_value_ratio, property_value, income, loan_amount, 
-      starts_with("tract_"), ffiec_msa_md_median_family_income),
+      starts_with('tract_'), ffiec_msa_md_median_family_income),
     as.numeric
   )) %>%
   
@@ -112,10 +112,10 @@ datos_final <- raw_data %>%
   
   mutate(debt_to_income_ratio = factor(
     if_else(is.na(debt_to_income_ratio), 
-            "No_Reportado", 
+            'No_Reportado', 
             debt_to_income_ratio),
     
-    levels = c(niveles_dti, "No_Reportado"), ordered = TRUE
+    levels = c(niveles_dti, 'No_Reportado'), ordered = TRUE
   )) %>%
   
   mutate(total_units = factor(total_units, levels = niveles_unidades, ordered = TRUE)) %>%
@@ -124,6 +124,6 @@ datos_final <- raw_data %>%
   mutate(across(where(is.character), as.factor))
 
 
-# 5.GUARDADO DE ESTA VERSION FINAL
-saveRDS(datos_final, "data/processed/hmda_ny_limpio.rds")
+# 5.Guardado final
+saveRDS(datos_final, 'data/processed/hmda_ny_limpio.rds')
 skim(datos_final)
