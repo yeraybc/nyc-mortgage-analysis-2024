@@ -1,6 +1,6 @@
 ---
 title: 'Fase 2: Análisis Exploratorio de Datos y Fairness'
-abstract: 'Objetivo: Analizar las distribuciones de las variables tras la limpieza, identificar multicolinealidad mediante correlaciones y realizar un analisis del sesgo algorítmico (Fairness).'
+abstract: 'Objetivo: Analizar las distribuciones de las variables tras la limpieza, identificar multicolinealidad mediante correlaciones y realizar un análisis del sesgo algorítmico (Fairness).'
 author: 'Yeray'
 date: today
 format:
@@ -10,16 +10,8 @@ format:
     toc-depth: 3
     code-fold: true
     embed-resources: true
-  pdf:
-    toc: true
-    number-sections: true
-    colorlinks: true
-  docx:
-    toc: true
-execute:
-  warning: false
-  message: false
 ---
+
 [🏠 Volver al Índice Principal](../index.html)
 
 # 1. Configuración librerias y carga de datos
